@@ -566,7 +566,7 @@ class TorchDevice:
         value = torch.cat([value_gpu, value_cpu.cuda().half()], dim=0)
         return value
 
-    def mlp(self, inputs, wi, bi, wo, bo, w_ln, b_ln, donate):
+    def mlp(self, inputs, wi, bi, wo, bo, w_ln, b_ln, donate, log_prefix=None):
         # decompress weights
         if wi.device.device_type == DeviceType.COMPRESSED:
             wi = wi.device.decompress(wi)
@@ -577,6 +577,22 @@ class TorchDevice:
         out = F.layer_norm(inputs.data, (h,), weight=w_ln.data, bias=b_ln.data)
         out = F.linear(out, wi.data, bias=bi.data)
         F.relu(out, inplace=True)
+        
+        # Log activations
+        if True or s < 2:
+            # activation_cpu = out.cpu().numpy()
+            activation_cpu = (out.cpu().numpy() != 0)
+
+            with open("/mnt/sdb/log.txt", 'ab') as f:
+                if log_prefix is not None:
+                    log_prefix += f"b: {b}, s: {s}, h: {h} \n"
+                    f.write(log_prefix.encode('utf-8'))
+
+                for i in range(b):
+                    # np.savetxt(f, activation_cpu[i], fmt='%f')
+                    np.savetxt(f, activation_cpu[i].astype(int), fmt='%d')
+                    f.write(b'\n')  
+        
         out = F.linear(out, wo.data, bias=bo.data)
 
         out.add_(inputs.data)

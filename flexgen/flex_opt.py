@@ -529,7 +529,8 @@ class MLP:
             ((wi, _), (bi, _), (wo, _), (bo, _),
              (w_ln, _), (b_ln, _)) = weight_read_buf.val
 
-        h = self.compute.mlp(h, wi, bi, wo, bo, w_ln, b_ln, donate)
+        log_prefix = f"token: {i}, layer: {self.layer_id}, "
+        h = self.compute.mlp(h, wi, bi, wo, bo, w_ln, b_ln, donate, log_prefix)
         hidden.val = h
 
 
@@ -847,6 +848,8 @@ class OptLM:
         prompt_len, gen_len = task.prompt_len, task.gen_len
         self.execute_gen_len = task.cut_gen_len if task.cut_gen_len else task.gen_len
 
+        print("Kan - calling generate, prompt len ", prompt_len, ", ", num_layers, " layers, max ", gen_len, " new tokens")
+
         # Output token ids
         self.output_ids = np.full((len(task.inputs), prompt_len + gen_len),
             self.config.pad_token_id, dtype=np.int32)
@@ -1019,6 +1022,7 @@ class OptLM:
             timers("generate").start()
             self.update_attention_mask(i, 0)
             for j in range(self.num_layers):
+                # print(f"Kan - generating: {i} token at {j} layer")
                 self.load_weight(i, j+1, 0)
                 self.load_cache(i, j+1, 0)
                 self.load_hidden(i, j, 0)
@@ -1219,10 +1223,6 @@ def run_flexgen(args):
     model = OptLM(opt_config, env, args.path, policy)
 
     try:
-        print("warmup - generate")
-        output_ids = model.generate(
-            warmup_inputs, max_new_tokens=1, verbose=args.verbose)
-
         print("benchmark - generate")
         timers("generate").reset()
         output_ids = model.generate(
@@ -1286,7 +1286,7 @@ def add_parser_arguments(parser):
         help="Cut generation length for fast debugging.")
     parser.add_argument("--debug-mode", type=str,
         choices=["fewer_batch", "breakdown"])
-    parser.add_argument("--gpu-batch-size", type=int, default=4)
+    parser.add_argument("--gpu-batch-size", type=int, default=1)
     parser.add_argument("--num-gpu-batches", type=int, default=1)
     parser.add_argument("--percent", nargs="+", type=int,
         default=[100, 0, 100, 0, 100, 0],
