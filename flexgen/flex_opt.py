@@ -14,6 +14,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from transformers import AutoTokenizer
+import json
 
 from flexgen.compression import CompressionConfig
 from flexgen.opt_config import OptConfig, get_opt_config, download_opt_weights
@@ -1179,6 +1180,89 @@ def get_test_inputs(prompt_len, num_prompts, tokenizer):
                           max_length=prompt_len).input_ids
     return (input_ids[0],) * num_prompts
 
+def get_inputs_from_prompt(prompt_len, tokenizer, prompt_str):
+    prompts = [prompt_str]
+    input_ids = tokenizer(prompts, padding="max_length",
+                          max_length=prompt_len).input_ids
+    return (input_ids[0],)
+
+def load_c4(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            yield json.loads(line)
+
+def run_flexgen_c4(args):
+    print(f"<run_c4>: args.model: {args.model}")
+    if args.model == "facebook/galactica-30b":
+        tokenizer = AutoTokenizer.from_pretrained("facebook/galactica-30b", padding_side="left")
+    else:
+        tokenizer = AutoTokenizer.from_pretrained("facebook/opt-30b", padding_side="left")
+    num_prompts = args.num_gpu_batches * args.gpu_batch_size
+    prompt_len, gen_len, cut_gen_len = args.prompt_len, args.gen_len, args.cut_gen_len
+
+    # Task and policy
+    gpu = TorchDevice("cuda:0")
+    cpu = TorchDevice("cpu")
+    disk = TorchDisk(args.offload_dir)
+    env = ExecutionEnv(gpu=gpu, cpu=cpu, disk=disk, mixed=TorchMixedDevice([gpu, cpu, disk]))
+
+    policy = Policy(args.gpu_batch_size, args.num_gpu_batches,
+                    args.percent[0], args.percent[1],
+                    args.percent[2], args.percent[3],
+                    args.percent[4], args.percent[5],
+                    args.overlap, args.sep_layer, args.pin_weight,
+                    args.cpu_cache_compute, args.attn_sparsity,
+                    args.compress_weight,
+                    CompressionConfig(num_bits=4, group_size=64,
+                                      group_dim=0, symmetric=False),
+                    args.compress_cache,
+                    CompressionConfig(num_bits=4, group_size=64,
+                                      group_dim=2, symmetric=False))
+    assert not (args.compress_cache and args.attn_sparsity < 1.0), "Not implemented"
+
+    opt_config = get_opt_config(args.model)
+    cache_size = opt_config.cache_bytes(num_prompts, prompt_len + gen_len)
+    hidden_size = opt_config.hidden_bytes(num_prompts, prompt_len + gen_len)
+    print(f"model size: {opt_config.model_bytes()/GB:.3f} GB, "
+          f"cache size: {cache_size/GB:.3f} GB, "
+          f"hidden size (prefill): {hidden_size/GB:.3f} GB")
+
+    print("init weight...")
+    model = OptLM(opt_config, env, args.path, policy)
+
+    try:
+        print("benchmark - generate")
+        timers("generate").reset()
+
+        file_path = './scripts/sparsity_script/c4_train.jsonl'
+        prompt_idx = 0
+        for record in load_c4(file_path):
+            if prompt_idx > 3:
+                break
+
+            print("Generating token ", prompt_idx)
+            prompt_idx += 1
+
+            # print(record)
+            # prompt_len ?????? why 512? why not the length of inputs?
+            inputs = get_inputs_from_prompt(prompt_len, tokenizer, record['prompt'])
+
+            output_ids = model.generate(
+                inputs, max_new_tokens=args.gen_len,
+                debug_mode=args.debug_mode, cut_gen_len=cut_gen_len, verbose=args.verbose)
+            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+            show_str = "Outputs:\n" + 70 * '-' + "\n"
+            for i in range(len(outputs)):
+                print("test", i)
+            
+                show_str += f"{i}: {outputs[i]}\n"
+                show_str += "-" * 70 + "\n"
+            print(show_str)
+
+        costs = timers("generate").costs
+    finally:
+        env.close_copy_threads()
+
 
 def run_flexgen(args):
     print(f"<run_flexgen>: args.model: {args.model}")
@@ -1190,7 +1274,6 @@ def run_flexgen(args):
     prompt_len, gen_len, cut_gen_len = args.prompt_len, args.gen_len, args.cut_gen_len
 
     # Task and policy
-    warmup_inputs = get_test_inputs(32, num_prompts, tokenizer)
     inputs = get_test_inputs(prompt_len, num_prompts, tokenizer)
 
     gpu = TorchDevice("cuda:0")
@@ -1249,7 +1332,7 @@ def run_flexgen(args):
     if DUMMY_WEIGHT not in args.path:
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         show_str = "Outputs:\n" + 70 * '-' + "\n"
-        for i in [0, len(outputs)-1]:
+        for i in range(len(outputs)):
             show_str += f"{i}: {outputs[i]}\n"
             show_str += "-" * 70 + "\n"
         if args.verbose >= 2:
@@ -1324,4 +1407,5 @@ if __name__ == "__main__":
 
     assert len(args.percent) == 6
 
-    run_flexgen(args)
+    # run_flexgen(args)
+    run_flexgen_c4(args)
