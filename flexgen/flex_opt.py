@@ -1317,7 +1317,7 @@ def run_flexgen(args):
     try:
         print("benchmark - generate")
         # clear activation log
-        with open('/mnt/sdb/log.txt', 'w') as file:
+        with open('/mnt/sdb/log.txt', 'w') as f:
             f.write("----- new prompt: 0\n")
 
         timers("generate").reset()
