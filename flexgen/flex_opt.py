@@ -1251,6 +1251,9 @@ def run_flexgen_c4(args):
                 continue
 
             print("Generating token ", prompt_idx)
+            with open("/mnt/sdb/log.txt", 'a') as f:
+                f.write("----- new prompt: " + str(prompt_idx) + "\n")
+
             prompt_idx += 1
 
             output_ids = model.generate(
@@ -1313,6 +1316,10 @@ def run_flexgen(args):
 
     try:
         print("benchmark - generate")
+        # clear activation log
+        with open('/mnt/sdb/log.txt', 'w') as file:
+            f.write("----- new prompt: 0\n")
+
         timers("generate").reset()
         output_ids = model.generate(
             inputs, max_new_tokens=args.gen_len,
