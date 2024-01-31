@@ -20,8 +20,10 @@ dataset = dataset.shuffle(buffer_size=10000, seed=42)
 path = "c4_train.jsonl"
 
 for idx, doc in enumerate(tqdm(dataset)):
+    if len(doc['text']) > 1000000:
+        print("skip: ", len(doc['text']))
+        continue
     data = {
-        "max_tokens": 0,
         "prompt": doc["text"],
     }
     dump_jsonl([data], path, append=True)

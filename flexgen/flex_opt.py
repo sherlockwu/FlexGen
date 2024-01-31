@@ -1234,18 +1234,24 @@ def run_flexgen_c4(args):
         print("benchmark - generate")
         timers("generate").reset()
 
+        # clear activation log
+        with open('/mnt/sdb/log.txt', 'w') as file:
+            pass        
+
         file_path = './scripts/sparsity_script/c4_train.jsonl'
         prompt_idx = 0
         for record in load_c4(file_path):
-            if prompt_idx > 3:
+            if prompt_idx > 100:
                 break
+            inputs = get_inputs_from_prompt(prompt_len, tokenizer, record['prompt'])
+
+            # skip very long prompt
+            if len(inputs[0]) > 1024:
+                print("skipped a prompt")
+                continue
 
             print("Generating token ", prompt_idx)
             prompt_idx += 1
-
-            # print(record)
-            # prompt_len ?????? why 512? why not the length of inputs?
-            inputs = get_inputs_from_prompt(prompt_len, tokenizer, record['prompt'])
 
             output_ids = model.generate(
                 inputs, max_new_tokens=args.gen_len,
@@ -1363,7 +1369,8 @@ def add_parser_arguments(parser):
              "FlexGen will automatically download them from HuggingFace.")
     parser.add_argument("--offload-dir", type=str, default="~/flexgen_offload_dir",
         help="The directory to offload tensors. ")
-    parser.add_argument("--prompt-len", type=int, default=512)
+    # parser.add_argument("--prompt-len", type=int, default=512)
+    parser.add_argument("--prompt-len", type=int, default=10)
     parser.add_argument("--gen-len", type=int, default=32)
     parser.add_argument("--cut-gen-len", type=int,
         help="Cut generation length for fast debugging.")

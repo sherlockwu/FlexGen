@@ -583,16 +583,16 @@ class TorchDevice:
             # activation_cpu = out.cpu().numpy()
             activation_cpu = (out.cpu().numpy() != 0)
 
-            with open("/mnt/sdb/log.txt", 'ab') as f:
+            with open("/mnt/sdb/log.txt", 'a') as f:
                 if log_prefix is not None:
                     log_prefix += f"b: {b}, s: {s}, h: {h} \n"
-                    f.write(log_prefix.encode('utf-8'))
-
+                    f.write(log_prefix)
+                    
                 for i in range(b):
-                    # np.savetxt(f, activation_cpu[i], fmt='%f')
-                    np.savetxt(f, activation_cpu[i].astype(int), fmt='%d')
-                    f.write(b'\n')  
-        
+                    for j in range(s):
+                        binary_string = ''.join(['1' if x else '0' for x in activation_cpu[i][j]])
+                        f.write(binary_string + "\n")
+
         out = F.linear(out, wo.data, bias=bo.data)
 
         out.add_(inputs.data)
