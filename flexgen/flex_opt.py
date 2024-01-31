@@ -1239,6 +1239,8 @@ def run_flexgen_c4(args):
             pass        
 
         file_path = './scripts/sparsity_script/c4_train.jsonl'
+        # file_path = './scripts/sparsity_script/c4_selected.jsonl'
+
         prompt_idx = 0
         for record in load_c4(file_path):
             if prompt_idx > 100:
